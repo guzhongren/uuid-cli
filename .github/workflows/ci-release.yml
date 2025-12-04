@@ -1,6 +1,13 @@
 name: CICD
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
 
 env:
   PROJECT_NAME: uuid-cli
@@ -18,7 +25,7 @@ jobs:
         job:
           [{ os: ubuntu-latest }, { os: macos-latest }, { os: windows-latest }]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4  # Fixed: Use v4 instead of v1
       - name: Install `rust` toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -48,7 +55,7 @@ jobs:
     name: MinSRV # Minimum supported rust version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4  # Fixed: Use v4 instead of v1
       - name: Install `rust` toolchain (v${{ env.RUST_MIN_SRV }})
         uses: actions-rs/toolchain@v1
         with:
