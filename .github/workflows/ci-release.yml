@@ -1,12 +1,12 @@
 name: CICD
 
+on: [push, pull_request]
+
 env:
   PROJECT_NAME: uuid-cli
   PROJECT_DESC: "UUID generator"
   PROJECT_AUTH: "guzhongren <guzhongren@users.noreply.github.com>"
   RUST_MIN_SRV: "1.85.0"
-
-on: [push, pull_request]
 
 jobs:
   style:
@@ -59,11 +59,11 @@ jobs:
         with:
           command: test
 
-  build:
+  build-linux:
+    name: Build (Linux targets)
     needs:
       - style
       - min_version
-    name: Build
     runs-on: ${{ matrix.job.os }}
     permissions:
       contents: write
@@ -71,262 +71,459 @@ jobs:
       fail-fast: false
       matrix:
         job:
-          - {
-              os: ubuntu-latest,
-              target: arm-unknown-linux-gnueabihf,
-              use-cross: use-cross,
-            }
-          - {
-              os: ubuntu-latest,
-              target: aarch64-unknown-linux-gnu,
-              use-cross: use-cross,
-            }
-          - {
-              os: ubuntu-latest,
-              target: aarch64-unknown-linux-musl,
-              use-cross: use-cross,
-            }
-          - {
-              os: ubuntu-latest,
-              target: i686-unknown-linux-gnu,
-              use-cross: use-cross,
-            }
-          - {
-              os: ubuntu-latest,
-              target: i686-unknown-linux-musl,
-              use-cross: use-cross,
-            }
-          - {
-              os: ubuntu-latest,
-              target: x86_64-unknown-linux-gnu,
-              use-cross: use-cross,
-            }
-          - {
-              os: ubuntu-latest,
-              target: x86_64-unknown-linux-musl,
-              use-cross: use-cross,
-            }
-          - { os: macos-latest, target: x86_64-apple-darwin }
-          - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: windows-latest, target: i686-pc-windows-gnu }
-          - { os: windows-latest, target: i686-pc-windows-msvc }
-          - { os: windows-latest, target: x86_64-pc-windows-gnu }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
-    outputs:
-      DEPLOY: ${{ steps.vars.outputs.DEPLOY }}
+          - { os: ubuntu-latest  , target: arm-unknown-linux-gnueabihf , use-cross: use-cross }
+          - { os: ubuntu-latest  , target: aarch64-unknown-linux-gnu   , use-cross: use-cross }
+          - { os: ubuntu-latest  , target: aarch64-unknown-linux-musl  , use-cross: use-cross }
+          - { os: ubuntu-latest  , target: i686-unknown-linux-gnu      , use-cross: use-cross }
+          - { os: ubuntu-latest  , target: i686-unknown-linux-musl     , use-cross: use-cross }
+          - { os: ubuntu-latest  , target: x86_64-unknown-linux-gnu    , use-cross: use-cross }
+          - { os: ubuntu-latest  , target: x86_64-unknown-linux-musl   , use-cross: use-cross }
 
     steps:
-      - uses: actions/checkout@v1
-      - name: Install any prerequisites
-        shell: bash
-        run: |
-          case ${{ matrix.job.target }} in
-            arm-*-linux-*hf) sudo apt-get -y update ; sudo apt-get -y install binutils-arm-linux-gnueabihf ;;
-            aarch64-*-linux-*) sudo apt-get -y update ; sudo apt-get -y install binutils-aarch64-linux-gnu ;;
-          esac
-      - name: Initialize workflow variables
-        id: vars
-        shell: bash
-        run: |
-          # toolchain
-          TOOLCHAIN="stable" ## default to "stable" toolchain
-          # * specify alternate TOOLCHAIN for *-pc-windows-gnu targets; gnu targets on Windows are broken for the standard *-pc-windows-msvc toolchain (refs: <https://github.com/rust-lang/rust/issues/47048>, <https://github.com/rust-lang/rust/issues/53454>, <https://github.com/rust-lang/cargo/issues/6754>)
-          case ${{ matrix.job.target }} in *-pc-windows-gnu) TOOLCHAIN="stable-${{ matrix.job.target }}" ;; esac;
-          # * use requested TOOLCHAIN if specified
-          if [ -n "${{ matrix.job.toolchain }}" ]; then TOOLCHAIN="${{ matrix.job.toolchain }}" ; fi
-          echo set-output name=TOOLCHAIN::${TOOLCHAIN}
-          echo ::set-output name=TOOLCHAIN::${TOOLCHAIN}
-          # staging directory
-          STAGING='_staging'
-          echo set-output name=STAGING::${STAGING}
-          echo ::set-output name=STAGING::${STAGING}
-          # determine EXE suffix
-          EXE_suffix="" ; case ${{ matrix.job.target }} in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
-          echo set-output name=EXE_suffix::${EXE_suffix}
-          echo ::set-output name=EXE_suffix::${EXE_suffix}
-          # parse commit reference info
-          REF_NAME=${GITHUB_REF#refs/*/}
-          unset REF_BRANCH ; case ${GITHUB_REF} in refs/heads/*) REF_BRANCH=${GITHUB_REF#refs/heads/} ;; esac;
-          unset REF_TAG ; case ${GITHUB_REF} in refs/tags/*) REF_TAG=${GITHUB_REF#refs/tags/} ;; esac;
-          REF_SHAS=${GITHUB_SHA:0:8}
-          echo set-output name=REF_NAME::${REF_NAME}
-          echo set-output name=REF_BRANCH::${REF_BRANCH}
-          echo set-output name=REF_TAG::${REF_TAG}
-          echo set-output name=REF_SHAS::${REF_SHAS}
-          echo ::set-output name=REF_NAME::${REF_NAME}
-          echo ::set-output name=REF_BRANCH::${REF_BRANCH}
-          echo ::set-output name=REF_TAG::${REF_TAG}
-          echo ::set-output name=REF_SHAS::${REF_SHAS}
-          # package name
-          PKG_suffix=".tar.gz" ; case ${{ matrix.job.target }} in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
-          PKG_BASENAME=${PROJECT_NAME}-${REF_TAG:-$REF_SHAS}-${{ matrix.job.target }}
-          PKG_NAME=${PKG_BASENAME}${PKG_suffix}
-          echo set-output name=PKG_suffix::${PKG_suffix}
-          echo set-output name=PKG_BASENAME::${PKG_BASENAME}
-          echo set-output name=PKG_NAME::${PKG_NAME}
-          echo ::set-output name=PKG_suffix::${PKG_suffix}
-          echo ::set-output name=PKG_BASENAME::${PKG_BASENAME}
-          echo ::set-output name=PKG_NAME::${PKG_NAME}
-          # deployable tag? (ie, leading "vM" or "M"; M == version number)
-          unset DEPLOY ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DEPLOY='true' ; fi
-          echo set-output name=DEPLOY::${DEPLOY:-<empty>/false}
-          echo ::set-output name=DEPLOY::${DEPLOY}
-          # DPKG architecture?
-          unset DPKG_ARCH ; case ${{ matrix.job.target }} in aarch64-*-linux-*) DPKG_ARCH=arm64 ;; i686-*-linux-*) DPKG_ARCH=i686 ;; x86_64-*-linux-*) DPKG_ARCH=amd64 ;; esac;
-          echo set-output name=DPKG_ARCH::${DPKG_ARCH}
-          echo ::set-output name=DPKG_ARCH::${DPKG_ARCH}
-          # DPKG version?
-          unset DPKG_VERSION ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DPKG_VERSION=${REF_TAG/#[vV]/} ; fi
-          echo set-output name=DPKG_VERSION::${DPKG_VERSION}
-          echo ::set-output name=DPKG_VERSION::${DPKG_VERSION}
-          # DPKG base name/conflicts?
-          DPKG_BASENAME=${PROJECT_NAME}
-          DPKG_CONFLICTS=${PROJECT_NAME}-musl
-          case ${{ matrix.job.target }} in *-musl) DPKG_BASENAME=${PROJECT_NAME}-musl ; DPKG_CONFLICTS=${PROJECT_NAME} ;; esac;
-          echo set-output name=DPKG_BASENAME::${DPKG_BASENAME}
-          echo set-output name=DPKG_CONFLICTS::${DPKG_CONFLICTS}
-          echo ::set-output name=DPKG_BASENAME::${DPKG_BASENAME}
-          echo ::set-output name=DPKG_CONFLICTS::${DPKG_CONFLICTS}
-          # DPKG name
-          unset DPKG_NAME;
-          if [[ -n $DPKG_ARCH && -n $DPKG_VERSION ]]; then DPKG_NAME="${DPKG_BASENAME}_${DPKG_VERSION}_${DPKG_ARCH}.deb" ; fi
-          echo set-output name=DPKG_NAME::${DPKG_NAME}
-          echo ::set-output name=DPKG_NAME::${DPKG_NAME}
-          # target-specific options
-          # * CARGO_USE_CROSS (truthy)
-          CARGO_USE_CROSS='true' ; case '${{ matrix.job.use-cross }}' in ''|0|f|false|n|no) unset CARGO_USE_CROSS ;; esac;
-          echo set-output name=CARGO_USE_CROSS::${CARGO_USE_CROSS:-<empty>/false}
-          echo ::set-output name=CARGO_USE_CROSS::${CARGO_USE_CROSS}
-          # * test only binary for arm-type targets
-          unset CARGO_TEST_OPTIONS ; case ${{ matrix.job.target }} in arm-* | aarch64-*-linux-*) CARGO_TEST_OPTIONS="--bin ${PROJECT_NAME}" ;; esac;
-          echo set-output name=CARGO_TEST_OPTIONS::${CARGO_TEST_OPTIONS}
-          echo ::set-output name=CARGO_TEST_OPTIONS::${CARGO_TEST_OPTIONS}
-          # * strip executable?
-          STRIP="strip" ; case ${{ matrix.job.target }} in arm-*-linux-*hf) STRIP="arm-linux-gnueabihf-strip" ;; aarch64-*-linux-*) STRIP="aarch64-linux-gnu-strip" ;; *-pc-windows-msvc) STRIP="" ;; esac;
-          echo set-output name=STRIP::${STRIP}
-          echo ::set-output name=STRIP::${STRIP}
-      - name: Create all needed build/work directories
-        shell: bash
-        run: |
-          mkdir -p '${{ steps.vars.outputs.STAGING }}'
-          mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}'
-          mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete'
-          mkdir -p '${{ steps.vars.outputs.STAGING }}/dpkg'
-      # - name: Update manpage placeholders
-      #   shell: bash
-      #   run: |
-      #     if [ -f "doc/${PROJECT_NAME}.md" ]; then
-      #       PROJ_VERSION="$(if echo "$GITHUB_REF" | grep -q '^refs/tags'; then echo "${GITHUB_REF#refs/*/}"; else echo; fi)"
-      #       sed -i.bk "s|footer: ${PROJECT_NAME} <version>|footer: ${PROJECT_NAME} $PROJ_VERSION|" doc/${PROJECT_NAME}.md
-      #       sed -i.bk "s|date: <date>|date: $(date '+%Y-%m-%d')|" doc/${PROJECT_NAME}.md
-      #       rm doc/${PROJECT_NAME}.md.bk
-      #     else
-      #       echo "No doc/${PROJECT_NAME}.md found — skipping manpage placeholder update."
-      #     fi
-      # - name: Setup pandoc
-      #   uses: r-lib/actions/setup-pandoc@v2
-      # - name: Generate Manpage
-      #   run: |
-      #     if [ -f "doc/${PROJECT_NAME}.md" ]; then
-      #       pandoc --standalone --to man doc/${PROJECT_NAME}.md -o ${PROJECT_NAME}.1
-      #     else
-      #       echo "No doc/${PROJECT_NAME}.md found — skipping manpage generation."
-      #     fi
-      - name: Install `rust` toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ steps.vars.outputs.TOOLCHAIN }}
-          target: ${{ matrix.job.target }}
-          override: true
-          profile: minimal # minimal component installation (ie, no documentation)
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
-          command: build
-          args: --release --target=${{ matrix.job.target }} --locked
-      - name: Test
-        if: matrix.job.target != 'aarch64-apple-darwin'
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
-          command: test
-          args: --target=${{ matrix.job.target }} ${{ steps.vars.outputs.CARGO_TEST_OPTIONS}}
-      - name: Archive executable artifacts
-        uses: actions/upload-artifact@master
-        with:
-          name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
-          path: target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}
-      - name: Package
-        shell: bash
-        run: |
-          # binary
-          cp 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
-          # `strip` binary (if needed)
-          if [ -n "${{ steps.vars.outputs.STRIP }}" ]; then "${{ steps.vars.outputs.STRIP }}" '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' ; fi
-          # README and LICENSE
-          cp README.md '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
-          cp LICENSE '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
-          # manpage (if generated)
-          if [ -f ${PROJECT_NAME}.1 ]; then
-            cp ${PROJECT_NAME}.1 '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
-          else
-            echo "No ${PROJECT_NAME}.1 found — skipping manpage copy."
-          fi
-          # autocomplete
+    - uses: actions/checkout@v4
+    - name: Install any prerequisites
+      shell: bash
+      run: |
+        case ${{ matrix.job.target }} in
+          arm-*-linux-*hf) sudo apt-get -y update ; sudo apt-get -y install binutils-arm-linux-gnueabihf ;;
+          aarch64-*-linux-*) sudo apt-get -y update ; sudo apt-get -y install binutils-aarch64-linux-gnu ;;
+        esac
+    - name: Initialize workflow variables
+      id: vars
+      shell: bash
+      run: |
+        # (same init script as before)
+        TOOLCHAIN="stable"
+        case ${{ matrix.job.target }} in *-pc-windows-gnu) TOOLCHAIN="stable-${{ matrix.job.target }}" ;; esac;
+        if [ -n "${{ matrix.job.toolchain }}" ]; then TOOLCHAIN="${{ matrix.job.toolchain }}" ; fi
+        echo "TOOLCHAIN=${TOOLCHAIN}" >> $GITHUB_OUTPUT
+        STAGING='_staging'
+        echo "STAGING=${STAGING}" >> $GITHUB_OUTPUT
+        EXE_suffix="" ; case ${{ matrix.job.target }} in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
+        echo "EXE_suffix=${EXE_suffix}" >> $GITHUB_OUTPUT
+        REF_NAME=${GITHUB_REF#refs/*/}
+        unset REF_BRANCH ; case ${GITHUB_REF} in refs/heads/*) REF_BRANCH=${GITHUB_REF#refs/heads/} ;; esac;
+        unset REF_TAG ; case ${GITHUB_REF} in refs/tags/*) REF_TAG=${GITHUB_REF#refs/tags/} ;; esac;
+        REF_SHAS=${GITHUB_SHA:0:8}
+        echo "REF_NAME=${REF_NAME}" >> $GITHUB_OUTPUT
+        echo "REF_BRANCH=${REF_BRANCH}" >> $GITHUB_OUTPUT
+        echo "REF_TAG=${REF_TAG}" >> $GITHUB_OUTPUT
+        echo "REF_SHAS=${REF_SHAS}" >> $GITHUB_OUTPUT
+        PKG_suffix=".tar.gz" ; case ${{ matrix.job.target }} in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
+        PKG_BASENAME=${PROJECT_NAME}-${REF_TAG:-$REF_SHAS}-${{ matrix.job.target }}
+        PKG_NAME=${PKG_BASENAME}${PKG_suffix}
+        echo "PKG_suffix=${PKG_suffix}" >> $GITHUB_OUTPUT
+        echo "PKG_BASENAME=${PKG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_OUTPUT
+        unset DEPLOY ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DEPLOY='true' ; fi
+        echo "DEPLOY=${DEPLOY}" >> $GITHUB_OUTPUT
+        unset DPKG_ARCH ; case ${{ matrix.job.target }} in aarch64-*-linux-*) DPKG_ARCH=arm64 ;; i686-*-linux-*) DPKG_ARCH=i686 ;; x86_64-*-linux-*) DPKG_ARCH=amd64 ;; esac;
+        echo "DPKG_ARCH=${DPKG_ARCH}" >> $GITHUB_OUTPUT
+        unset DPKG_VERSION ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DPKG_VERSION=${REF_TAG/#[vV]/} ; fi
+        echo "DPKG_VERSION=${DPKG_VERSION}" >> $GITHUB_OUTPUT
+        DPKG_BASENAME=${PROJECT_NAME}
+        DPKG_CONFLICTS=${PROJECT_NAME}-musl
+        case ${{ matrix.job.target }} in *-musl) DPKG_BASENAME=${PROJECT_NAME}-musl ; DPKG_CONFLICTS=${PROJECT_NAME} ;; esac;
+        echo "DPKG_BASENAME=${DPKG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "DPKG_CONFLICTS=${DPKG_CONFLICTS}" >> $GITHUB_OUTPUT
+        unset DPKG_NAME; if [[ -n $DPKG_ARCH && -n $DPKG_VERSION ]]; then DPKG_NAME="${DPKG_BASENAME}_${DPKG_VERSION}_${DPKG_ARCH}.deb" ; fi
+        echo "DPKG_NAME=${DPKG_NAME}" >> $GITHUB_OUTPUT
+        CARGO_USE_CROSS='true' ; case '${{ matrix.job.use-cross }}' in ''|0|f|false|n|no) unset CARGO_USE_CROSS ;; esac;
+        echo "CARGO_USE_CROSS=${CARGO_USE_CROSS}" >> $GITHUB_OUTPUT
+        unset CARGO_TEST_OPTIONS ; case ${{ matrix.job.target }} in arm-* | aarch64-*-linux-*) CARGO_TEST_OPTIONS="--bin ${PROJECT_NAME}" ;; esac;
+        echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_OUTPUT
+        STRIP="strip" ; case ${{ matrix.job.target }} in arm-*-linux-*hf) STRIP="arm-linux-gnueabihf-strip" ;; aarch64-*-linux-*) STRIP="aarch64-linux-gnu-strip" ;; *-pc-windows-msvc) STRIP="" ;; esac;
+        echo "STRIP=${STRIP}" >> $GITHUB_OUTPUT
+    - name: Create all needed build/work directories
+      shell: bash
+      run: |
+        mkdir -p '${{ steps.vars.outputs.STAGING }}'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/dpkg'
+    - name: Install `rust` toolchain
+      uses: actions-rs/toolchain@v1.0.6
+      with:
+        toolchain: ${{ steps.vars.outputs.TOOLCHAIN }}
+        target: ${{ matrix.job.target }}
+        override: true
+        profile: minimal
+    - name: Build
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
+        command: build
+        args: --release --target=${{ matrix.job.target }} --locked
+    - name: Test
+      if: matrix.job.target != 'aarch64-apple-darwin'
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
+        command: test
+        args: --target=${{ matrix.job.target }} ${{ steps.vars.outputs.CARGO_TEST_OPTIONS}}
+    - name: Archive executable artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
+        path: target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}
+    - name: Package
+      shell: bash
+      run: |
+        # (same package steps as before)
+        cp 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        if [ -n "${{ steps.vars.outputs.STRIP }}" ]; then "${{ steps.vars.outputs.STRIP }}" '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' ; fi
+        cp README.md '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        cp LICENSE '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        if [ -f ${PROJECT_NAME}.1 ]; then
+          cp ${PROJECT_NAME}.1 '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        else
+          echo "No ${PROJECT_NAME}.1 found — skipping manpage copy."
+        fi
+        if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/${{ env.PROJECT_NAME }}.bash-completion'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}.ps1' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+        else
+          echo "No autocomplete files found — skipping autocomplete copy."
+        fi
+        pushd '${{ steps.vars.outputs.STAGING }}/' >/dev/null
+        case ${{ matrix.job.target }} in
+          *-pc-windows-*) 7z -y a '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* | tail -2 ;;
+          *) tar czf '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* ;;
+        esac;
+        popd >/dev/null
+        if [ -n "${{ steps.vars.outputs.DPKG_NAME }}" ]; then
+          DPKG_DIR="${{ steps.vars.outputs.STAGING }}/dpkg"
+          install -Dm755 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' "${DPKG_DIR}/usr/bin/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}"
           if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
-            cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/${{ env.PROJECT_NAME }}.bash-completion'
-            cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
-            cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}.ps1' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
-            cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' "${DPKG_DIR}/usr/share/bash-completion/completions/${{ env.PROJECT_NAME }}"
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' "${DPKG_DIR}/usr/share/fish/vendor_completions.d/${{ env.PROJECT_NAME }}.fish"
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' "${DPKG_DIR}/usr/share/zsh/vendor-completions/_${{ env.PROJECT_NAME }}"
           else
-            echo "No autocomplete files found — skipping autocomplete copy."
+            echo "No dpkg completion files found — skipping installation of completions."
           fi
-          # base compressed package
-          pushd '${{ steps.vars.outputs.STAGING }}/' >/dev/null
-          case ${{ matrix.job.target }} in
-            *-pc-windows-*) 7z -y a '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* | tail -2 ;;
-            *) tar czf '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* ;;
-          esac;
-          popd >/dev/null
-          # dpkg
-          if [ -n "${{ steps.vars.outputs.DPKG_NAME }}" ]; then
-            DPKG_DIR="${{ steps.vars.outputs.STAGING }}/dpkg"
-            # binary
-            install -Dm755 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' "${DPKG_DIR}/usr/bin/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}"
+          mkdir -p "${DPKG_DIR}/DEBIAN"
+          printf "Package: ${{ steps.vars.outputs.DPKG_BASENAME }}\nVersion: ${{ steps.vars.outputs.DPKG_VERSION }}\nSection: utils\nPriority: optional\nMaintainer: ${{ env.PROJECT_AUTH }}\nArchitecture: ${{ steps.vars.outputs.DPKG_ARCH }}\nProvides: ${{ env.PROJECT_NAME }}\nConflicts: ${{ steps.vars.outputs.DPKG_CONFLICTS }}\nDescription: ${{ env.PROJECT_DESC }}\n" > "${DPKG_DIR}/DEBIAN/control"
+          fakeroot dpkg-deb --build "${DPKG_DIR}" "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
+          ar x "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
+          zstd -d < control.tar.zst | xz > control.tar.xz
+          zstd -d < data.tar.zst | xz > data.tar.xz
+          xz_deb="$(echo ${{ steps.vars.outputs.DPKG_NAME }} | sed 's/.deb/_xz.deb/g')"
+          ar -m -c -a sdsd ${xz_deb} debian-binary control.tar.xz data.tar.xz
+          mv ${xz_deb} ${{ steps.vars.outputs.STAGING }}/
+          rm debian-binary control.tar.xz data.tar.xz control.tar.zst data.tar.zst
+        fi
+    - name: Publish
+      uses: softprops/action-gh-release@v2
+      if: steps.vars.outputs.DEPLOY
+      with:
+        files: |
+          ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
+          ${{ steps.vars.outputs.STAGING }}/*.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            # (auto-)completions — only install if files exist (avoid failing on CI when completions aren't generated)
-            if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
-              install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' "${DPKG_DIR}/usr/share/bash-completion/completions/${{ env.PROJECT_NAME }}"
-              install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' "${DPKG_DIR}/usr/share/fish/vendor_completions.d/${{ env.PROJECT_NAME }}.fish"
-              install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' "${DPKG_DIR}/usr/share/zsh/vendor-completions/_${{ env.PROJECT_NAME }}"
-            else
-              echo "No dpkg completion files found — skipping installation of completions."
-            fi
-            # control file
-            mkdir -p "${DPKG_DIR}/DEBIAN"
-            printf "Package: ${{ steps.vars.outputs.DPKG_BASENAME }}\nVersion: ${{ steps.vars.outputs.DPKG_VERSION }}\nSection: utils\nPriority: optional\nMaintainer: ${{ env.PROJECT_AUTH }}\nArchitecture: ${{ steps.vars.outputs.DPKG_ARCH }}\nProvides: ${{ env.PROJECT_NAME }}\nConflicts: ${{ steps.vars.outputs.DPKG_CONFLICTS }}\nDescription: ${{ env.PROJECT_DESC }}\n" > "${DPKG_DIR}/DEBIAN/control"
-            ## cat "${DPKG_DIR}/DEBIAN/control"
-            # build dpkg
-            fakeroot dpkg-deb --build "${DPKG_DIR}" "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
-            # build a deb not using zst
-            ar x "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
-            # Uncompress zstd files an re-compress them using xz
-            zstd -d < control.tar.zst | xz > control.tar.xz
-            zstd -d < data.tar.zst | xz > data.tar.xz
-            # Re-create the Debian package in /tmp/
-            xz_deb="$(echo ${{ steps.vars.outputs.DPKG_NAME }} | sed 's/.deb/_xz.deb/g')"
-            ar -m -c -a sdsd ${xz_deb} debian-binary control.tar.xz data.tar.xz
-            mv ${xz_deb} ${{ steps.vars.outputs.STAGING }}/
-            # Clean up
-            rm debian-binary control.tar.xz data.tar.xz control.tar.zst data.tar.zst
+  build-macos:
+    name: Build (macOS targets)
+    needs:
+      - style
+      - min_version
+    runs-on: ${{ matrix.job.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { os: macos-latest   , target: x86_64-apple-darwin }
+          - { os: macos-latest   , target: aarch64-apple-darwin }
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Initialize workflow variables
+      id: vars
+      shell: bash
+      run: |
+        TOOLCHAIN="stable"
+        case ${{ matrix.job.target }} in *-pc-windows-gnu) TOOLCHAIN="stable-${{ matrix.job.target }}" ;; esac;
+        if [ -n "${{ matrix.job.toolchain }}" ]; then TOOLCHAIN="${{ matrix.job.toolchain }}" ; fi
+        echo "TOOLCHAIN=${TOOLCHAIN}" >> $GITHUB_OUTPUT
+        STAGING='_staging'
+        echo "STAGING=${STAGING}" >> $GITHUB_OUTPUT
+        EXE_suffix="" ; case ${{ matrix.job.target }} in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
+        echo "EXE_suffix=${EXE_suffix}" >> $GITHUB_OUTPUT
+        REF_NAME=${GITHUB_REF#refs/*/}
+        unset REF_BRANCH ; case ${GITHUB_REF} in refs/heads/*) REF_BRANCH=${GITHUB_REF#refs/heads/} ;; esac;
+        unset REF_TAG ; case ${GITHUB_REF} in refs/tags/*) REF_TAG=${GITHUB_REF#refs/tags/} ;; esac;
+        REF_SHAS=${GITHUB_SHA:0:8}
+        echo "REF_NAME=${REF_NAME}" >> $GITHUB_OUTPUT
+        echo "REF_BRANCH=${REF_BRANCH}" >> $GITHUB_OUTPUT
+        echo "REF_TAG=${REF_TAG}" >> $GITHUB_OUTPUT
+        echo "REF_SHAS=${REF_SHAS}" >> $GITHUB_OUTPUT
+        PKG_suffix=".tar.gz" ; case ${{ matrix.job.target }} in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
+        PKG_BASENAME=${PROJECT_NAME}-${REF_TAG:-$REF_SHAS}-${{ matrix.job.target }}
+        PKG_NAME=${PKG_BASENAME}${PKG_suffix}
+        echo "PKG_suffix=${PKG_suffix}" >> $GITHUB_OUTPUT
+        echo "PKG_BASENAME=${PKG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_OUTPUT
+        unset DEPLOY ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DEPLOY='true' ; fi
+        echo "DEPLOY=${DEPLOY}" >> $GITHUB_OUTPUT
+        unset DPKG_ARCH ; case ${{ matrix.job.target }} in aarch64-*-linux-*) DPKG_ARCH=arm64 ;; i686-*-linux-*) DPKG_ARCH=i686 ;; x86_64-*-linux-*) DPKG_ARCH=amd64 ;; esac;
+        echo "DPKG_ARCH=${DPKG_ARCH}" >> $GITHUB_OUTPUT
+        unset DPKG_VERSION ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DPKG_VERSION=${REF_TAG/#[vV]/} ; fi
+        echo "DPKG_VERSION=${DPKG_VERSION}" >> $GITHUB_OUTPUT
+        DPKG_BASENAME=${PROJECT_NAME}
+        DPKG_CONFLICTS=${PROJECT_NAME}-musl
+        case ${{ matrix.job.target }} in *-musl) DPKG_BASENAME=${PROJECT_NAME}-musl ; DPKG_CONFLICTS=${PROJECT_NAME} ;; esac;
+        echo "DPKG_BASENAME=${DPKG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "DPKG_CONFLICTS=${DPKG_CONFLICTS}" >> $GITHUB_OUTPUT
+        unset DPKG_NAME; if [[ -n $DPKG_ARCH && -n $DPKG_VERSION ]]; then DPKG_NAME="${DPKG_BASENAME}_${DPKG_VERSION}_${DPKG_ARCH}.deb" ; fi
+        echo "DPKG_NAME=${DPKG_NAME}" >> $GITHUB_OUTPUT
+        CARGO_USE_CROSS='true' ; case '${{ matrix.job.use-cross }}' in ''|0|f|false|n|no) unset CARGO_USE_CROSS ;; esac;
+        echo "CARGO_USE_CROSS=${CARGO_USE_CROSS}" >> $GITHUB_OUTPUT
+        unset CARGO_TEST_OPTIONS ; case ${{ matrix.job.target }} in arm-* | aarch64-*-linux-*) CARGO_TEST_OPTIONS="--bin ${PROJECT_NAME}" ;; esac;
+        echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_OUTPUT
+        STRIP="strip" ; case ${{ matrix.job.target }} in arm-*-linux-*hf) STRIP="arm-linux-gnueabihf-strip" ;; aarch64-*-linux-*) STRIP="aarch64-linux-gnu-strip" ;; *-pc-windows-msvc) STRIP="" ;; esac;
+        echo "STRIP=${STRIP}" >> $GITHUB_OUTPUT
+    - name: Create all needed build/work directories
+      shell: bash
+      run: |
+        mkdir -p '${{ steps.vars.outputs.STAGING }}'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/dpkg'
+    - name: Install `rust` toolchain
+      uses: actions-rs/toolchain@v1.0.6
+      with:
+        toolchain: ${{ steps.vars.outputs.TOOLCHAIN }}
+        target: ${{ matrix.job.target }}
+        override: true
+        profile: minimal
+    - name: Build
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
+        command: build
+        args: --release --target=${{ matrix.job.target }} --locked
+    - name: Test
+      if: matrix.job.target != 'aarch64-apple-darwin'
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
+        command: test
+        args: --target=${{ matrix.job.target }} ${{ steps.vars.outputs.CARGO_TEST_OPTIONS}}
+    - name: Archive executable artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
+        path: target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}
+    - name: Package
+      shell: bash
+      run: |
+        cp 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        if [ -n "${{ steps.vars.outputs.STRIP }}" ]; then "${{ steps.vars.outputs.STRIP }}" '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' ; fi
+        cp README.md '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        cp LICENSE '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        if [ -f ${PROJECT_NAME}.1 ]; then
+          cp ${PROJECT_NAME}.1 '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        else
+          echo "No ${PROJECT_NAME}.1 found — skipping manpage copy."
+        fi
+        if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/${{ env.PROJECT_NAME }}.bash-completion'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}.ps1' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+        else
+          echo "No autocomplete files found — skipping autocomplete copy."
+        fi
+        pushd '${{ steps.vars.outputs.STAGING }}/' >/dev/null
+        case ${{ matrix.job.target }} in
+          *-pc-windows-*) 7z -y a '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* | tail -2 ;;
+          *) tar czf '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* ;;
+        esac;
+        popd >/dev/null
+        if [ -n "${{ steps.vars.outputs.DPKG_NAME }}" ]; then
+          DPKG_DIR="${{ steps.vars.outputs.STAGING }}/dpkg"
+          install -Dm755 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' "${DPKG_DIR}/usr/bin/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}"
+          if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' "${DPKG_DIR}/usr/share/bash-completion/completions/${{ env.PROJECT_NAME }}"
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' "${DPKG_DIR}/usr/share/fish/vendor_completions.d/${{ env.PROJECT_NAME }}.fish"
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' "${DPKG_DIR}/usr/share/zsh/vendor-completions/_${{ env.PROJECT_NAME }}"
+          else
+            echo "No dpkg completion files found — skipping installation of completions."
           fi
-      - name: Publish
-        uses: softprops/action-gh-release@v1
-        if: steps.vars.outputs.DEPLOY
-        with:
-          files: |
-            ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
-            ${{ steps.vars.outputs.STAGING }}/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          mkdir -p "${DPKG_DIR}/DEBIAN"
+          printf "Package: ${{ steps.vars.outputs.DPKG_BASENAME }}\nVersion: ${{ steps.vars.outputs.DPKG_VERSION }}\nSection: utils\nPriority: optional\nMaintainer: ${{ env.PROJECT_AUTH }}\nArchitecture: ${{ steps.vars.outputs.DPKG_ARCH }}\nProvides: ${{ env.PROJECT_NAME }}\nConflicts: ${{ steps.vars.outputs.DPKG_CONFLICTS }}\nDescription: ${{ env.PROJECT_DESC }}\n" > "${DPKG_DIR}/DEBIAN/control"
+          fakeroot dpkg-deb --build "${DPKG_DIR}" "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
+          ar x "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
+          zstd -d < control.tar.zst | xz > control.tar.xz
+          zstd -d < data.tar.zst | xz > data.tar.xz
+          xz_deb="$(echo ${{ steps.vars.outputs.DPKG_NAME }} | sed 's/.deb/_xz.deb/g')"
+          ar -m -c -a sdsd ${xz_deb} debian-binary control.tar.xz data.tar.xz
+          mv ${xz_deb} ${{ steps.vars.outputs.STAGING }}/
+          rm debian-binary control.tar.xz data.tar.xz control.tar.zst data.tar.zst
+        fi
+    - name: Publish
+      uses: softprops/action-gh-release@v2
+      if: steps.vars.outputs.DEPLOY
+      with:
+        files: |
+          ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
+          ${{ steps.vars.outputs.STAGING }}/*.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    name: Build (Windows targets)
+    needs:
+      - style
+      - min_version
+    runs-on: ${{ matrix.job.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { os: windows-latest , target: i686-pc-windows-gnu }
+          - { os: windows-latest , target: i686-pc-windows-msvc }
+          - { os: windows-latest , target: x86_64-pc-windows-gnu }
+          - { os: windows-latest , target: x86_64-pc-windows-msvc }
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Initialize workflow variables
+      id: vars
+      shell: bash
+      run: |
+        TOOLCHAIN="stable"
+        case ${{ matrix.job.target }} in *-pc-windows-gnu) TOOLCHAIN="stable-${{ matrix.job.target }}" ;; esac;
+        if [ -n "${{ matrix.job.toolchain }}" ]; then TOOLCHAIN="${{ matrix.job.toolchain }}" ; fi
+        echo "TOOLCHAIN=${TOOLCHAIN}" >> $GITHUB_OUTPUT
+        STAGING='_staging'
+        echo "STAGING=${STAGING}" >> $GITHUB_OUTPUT
+        EXE_suffix="" ; case ${{ matrix.job.target }} in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
+        echo "EXE_suffix=${EXE_suffix}" >> $GITHUB_OUTPUT
+        REF_NAME=${GITHUB_REF#refs/*/}
+        unset REF_BRANCH ; case ${GITHUB_REF} in refs/heads/*) REF_BRANCH=${GITHUB_REF#refs/heads/} ;; esac;
+        unset REF_TAG ; case ${GITHUB_REF} in refs/tags/*) REF_TAG=${GITHUB_REF#refs/tags/} ;; esac;
+        REF_SHAS=${GITHUB_SHA:0:8}
+        echo "REF_NAME=${REF_NAME}" >> $GITHUB_OUTPUT
+        echo "REF_BRANCH=${REF_BRANCH}" >> $GITHUB_OUTPUT
+        echo "REF_TAG=${REF_TAG}" >> $GITHUB_OUTPUT
+        echo "REF_SHAS=${REF_SHAS}" >> $GITHUB_OUTPUT
+        PKG_suffix=".tar.gz" ; case ${{ matrix.job.target }} in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
+        PKG_BASENAME=${PROJECT_NAME}-${REF_TAG:-$REF_SHAS}-${{ matrix.job.target }}
+        PKG_NAME=${PKG_BASENAME}${PKG_suffix}
+        echo "PKG_suffix=${PKG_suffix}" >> $GITHUB_OUTPUT
+        echo "PKG_BASENAME=${PKG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_OUTPUT
+        unset DEPLOY ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DEPLOY='true' ; fi
+        echo "DEPLOY=${DEPLOY}" >> $GITHUB_OUTPUT
+        unset DPKG_ARCH ; case ${{ matrix.job.target }} in aarch64-*-linux-*) DPKG_ARCH=arm64 ;; i686-*-linux-*) DPKG_ARCH=i686 ;; x86_64-*-linux-*) DPKG_ARCH=amd64 ;; esac;
+        echo "DPKG_ARCH=${DPKG_ARCH}" >> $GITHUB_OUTPUT
+        unset DPKG_VERSION ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DPKG_VERSION=${REF_TAG/#[vV]/} ; fi
+        echo "DPKG_VERSION=${DPKG_VERSION}" >> $GITHUB_OUTPUT
+        DPKG_BASENAME=${PROJECT_NAME}
+        DPKG_CONFLICTS=${PROJECT_NAME}-musl
+        case ${{ matrix.job.target }} in *-musl) DPKG_BASENAME=${PROJECT_NAME}-musl ; DPKG_CONFLICTS=${PROJECT_NAME} ;; esac;
+        echo "DPKG_BASENAME=${DPKG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "DPKG_CONFLICTS=${DPKG_CONFLICTS}" >> $GITHUB_OUTPUT
+        unset DPKG_NAME; if [[ -n $DPKG_ARCH && -n $DPKG_VERSION ]]; then DPKG_NAME="${DPKG_BASENAME}_${DPKG_VERSION}_${DPKG_ARCH}.deb" ; fi
+        echo "DPKG_NAME=${DPKG_NAME}" >> $GITHUB_OUTPUT
+        CARGO_USE_CROSS='true' ; case '${{ matrix.job.use-cross }}' in ''|0|f|false|n|no) unset CARGO_USE_CROSS ;; esac;
+        echo "CARGO_USE_CROSS=${CARGO_USE_CROSS}" >> $GITHUB_OUTPUT
+        unset CARGO_TEST_OPTIONS ; case ${{ matrix.job.target }} in arm-* | aarch64-*-linux-*) CARGO_TEST_OPTIONS="--bin ${PROJECT_NAME}" ;; esac;
+        echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_OUTPUT
+        STRIP="strip" ; case ${{ matrix.job.target }} in arm-*-linux-*hf) STRIP="arm-linux-gnueabihf-strip" ;; aarch64-*-linux-*) STRIP="aarch64-linux-gnu-strip" ;; *-pc-windows-msvc) STRIP="" ;; esac;
+        echo "STRIP=${STRIP}" >> $GITHUB_OUTPUT
+    - name: Create all needed build/work directories
+      shell: bash
+      run: |
+        mkdir -p '${{ steps.vars.outputs.STAGING }}'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete'
+        mkdir -p '${{ steps.vars.outputs.STAGING }}/dpkg'
+    - name: Install `rust` toolchain
+      uses: actions-rs/toolchain@v1.0.6
+      with:
+        toolchain: ${{ steps.vars.outputs.TOOLCHAIN }}
+        target: ${{ matrix.job.target }}
+        override: true
+        profile: minimal
+    - name: Build
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
+        command: build
+        args: --release --target=${{ matrix.job.target }} --locked
+    - name: Test
+      if: matrix.job.target != 'aarch64-apple-darwin'
+      uses: actions-rs/cargo@v1.0.3
+      with:
+        use-cross: ${{ steps.vars.outputs.CARGO_USE_CROSS }}
+        command: test
+        args: --target=${{ matrix.job.target }} ${{ steps.vars.outputs.CARGO_TEST_OPTIONS}}
+    - name: Archive executable artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
+        path: target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}
+    - name: Package
+      shell: bash
+      run: |
+        cp 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        if [ -n "${{ steps.vars.outputs.STRIP }}" ]; then "${{ steps.vars.outputs.STRIP }}" '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' ; fi
+        cp README.md '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        cp LICENSE '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        if [ -f ${PROJECT_NAME}.1 ]; then
+          cp ${PROJECT_NAME}.1 '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/'
+        else
+          echo "No ${PROJECT_NAME}.1 found — skipping manpage copy."
+        fi
+        if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/${{ env.PROJECT_NAME }}.bash-completion'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}.ps1' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+          cp 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/autocomplete/'
+        else
+          echo "No autocomplete files found — skipping autocomplete copy."
+        fi
+        pushd '${{ steps.vars.outputs.STAGING }}/' >/dev/null
+        case ${{ matrix.job.target }} in
+          *-pc-windows-*) 7z -y a '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* | tail -2 ;;
+          *) tar czf '${{ steps.vars.outputs.PKG_NAME }}' '${{ steps.vars.outputs.PKG_BASENAME }}'/* ;;
+        esac;
+        popd >/dev/null
+        if [ -n "${{ steps.vars.outputs.DPKG_NAME }}" ]; then
+          DPKG_DIR="${{ steps.vars.outputs.STAGING }}/dpkg"
+          install -Dm755 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' "${DPKG_DIR}/usr/bin/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}"
+          if find 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' -maxdepth 0 2>/dev/null | grep -q .; then
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.bash' "${DPKG_DIR}/usr/share/bash-completion/completions/${{ env.PROJECT_NAME }}"
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/${{ env.PROJECT_NAME }}.fish' "${DPKG_DIR}/usr/share/fish/vendor_completions.d/${{ env.PROJECT_NAME }}.fish"
+            install -Dm644 'target/${{ matrix.job.target }}/release/build/${{ env.PROJECT_NAME }}-'*/'out/_${{ env.PROJECT_NAME }}' "${DPKG_DIR}/usr/share/zsh/vendor-completions/_${{ env.PROJECT_NAME }}"
+          else
+            echo "No dpkg completion files found — skipping installation of completions."
+          fi
+          mkdir -p "${DPKG_DIR}/DEBIAN"
+          printf "Package: ${{ steps.vars.outputs.DPKG_BASENAME }}\nVersion: ${{ steps.vars.outputs.DPKG_VERSION }}\nSection: utils\nPriority: optional\nMaintainer: ${{ env.PROJECT_AUTH }}\nArchitecture: ${{ steps.vars.outputs.DPKG_ARCH }}\nProvides: ${{ env.PROJECT_NAME }}\nConflicts: ${{ steps.vars.outputs.DPKG_CONFLICTS }}\nDescription: ${{ env.PROJECT_DESC }}\n" > "${DPKG_DIR}/DEBIAN/control"
+          fakeroot dpkg-deb --build "${DPKG_DIR}" "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
+          ar x "${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.DPKG_NAME }}"
+          zstd -d < control.tar.zst | xz > control.tar.xz
+          zstd -d < data.tar.zst | xz > data.tar.xz
+          xz_deb="$(echo ${{ steps.vars.outputs.DPKG_NAME }} | sed 's/.deb/_xz.deb/g')"
+          ar -m -c -a sdsd ${xz_deb} debian-binary control.tar.xz data.tar.xz
+          mv ${xz_deb} ${{ steps.vars.outputs.STAGING }}/
+          rm debian-binary control.tar.xz data.tar.xz control.tar.zst data.tar.zst
+        fi
+    - name: Publish
+      uses: softprops/action-gh-release@v2
+      if: steps.vars.outputs.DEPLOY
+      with:
+        files: |
+          ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
+          ${{ steps.vars.outputs.STAGING }}/*.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
