@@ -119,41 +119,36 @@ jobs:
       - name: Build (release via cargo)
         if: ${{ !matrix.use-cross }}
         run: cargo build --release --target ${{ matrix.target }} --locked
-      - name: Upload artifact
+      - name: Package archive (.tar.gz)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.PROJECT_NAME }}-${{ github.ref_name }}-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }}${{ endsWith(matrix.target, 'windows-msvc') && '.exe' || '' }}
-      - name: Download current artifact
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.PROJECT_NAME }}-${{ github.ref_name }}-${{ matrix.target }}
-          path: artifacts
-
-      - name: Rename artifact
-        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
         run: |
-          cd artifacts
-          if [[ "${{ matrix.target }}" == *"windows-msvc"* ]]; then
-            mv ${{ env.PROJECT_NAME }}.exe ${{ env.PROJECT_NAME }}-${{ github.ref_name }}-${{ matrix.target }}.exe
-          else
-            mv ${{ env.PROJECT_NAME }} ${{ env.PROJECT_NAME }}-${{ github.ref_name }}-${{ matrix.target }}
+          set -euo pipefail
+          BIN_DIR="target/${{ matrix.target }}/release"
+          BIN_NAME="${{ env.PROJECT_NAME }}${{ endsWith(matrix.target, 'windows-msvc') && '.exe' || '' }}"
+          VERSION="${{ github.ref_name }}"
+          ARCHIVE_NAME="${{ env.PROJECT_NAME }}-${VERSION}-${{ matrix.target }}.tar.gz"
+          STAGING_ROOT="artifacts"
+          STAGING_DIR="${STAGING_ROOT}/${{ env.PROJECT_NAME }}-${VERSION}-${{ matrix.target }}"
+
+          mkdir -p "${STAGING_DIR}"
+          cp "${BIN_DIR}/${BIN_NAME}" "${STAGING_DIR}/"
+          if [[ "${{ matrix.target }}" != *"windows-msvc"* ]]; then
+            chmod +x "${STAGING_DIR}/${BIN_NAME}"
           fi
-        shell: bash
 
-      - name: Ensure executable permissions (non-Windows)
-        if: startsWith(github.ref, 'refs/tags/') && !endsWith(matrix.target, 'windows-msvc')
-        run: |
-          chmod +x artifacts/${{ env.PROJECT_NAME }}-${{ github.ref_name }}-${{ matrix.target }}
-        shell: bash
+          for f in README.md CHANGELOG.md LICENSE; do
+            [[ -f "$f" ]] && cp "$f" "${STAGING_DIR}/"
+          done
+
+          mkdir -p "${STAGING_ROOT}"
+          tar -C "${STAGING_ROOT}" -czf "${STAGING_ROOT}/${ARCHIVE_NAME}" "$(basename "${STAGING_DIR}")"
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/*
+            artifacts/*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
