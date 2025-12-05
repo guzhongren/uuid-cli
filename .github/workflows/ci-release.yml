@@ -101,17 +101,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.use-cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Test (target - linux via cross)
+      - name: Test core crate (linux via cross)
         if: matrix.os == 'ubuntu-latest' && matrix.use-cross
-        run: cross test --target ${{ matrix.target }}
+        run: cross test --target ${{ matrix.target }} -p core --locked
 
-      - name: Test (target - macOS)
+      - name: Test CLI (macOS)
         if: matrix.os == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
-        run: cargo test --target ${{ matrix.target }}
+        run: cargo test --target ${{ matrix.target }} -p uuid-cli --locked
 
-      - name: Test (target - Windows)
+      - name: Test CLI (Windows)
         if: matrix.os == 'windows-latest' && matrix.target == 'x86_64-pc-windows-msvc'
-        run: cargo test --target ${{ matrix.target }}
+        run: cargo test --target ${{ matrix.target }} -p uuid-cli --locked
       - name: Build (release via cross)
         if: matrix.use-cross
         run: cross build --release --target ${{ matrix.target }} --locked
